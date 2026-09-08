@@ -1,0 +1,43 @@
+Watching for file changes with StatReloader
+[01/Sep/2026 05:34:39] "GET /api/campuses/ HTTP/1.1" 200 52
+[01/Sep/2026 05:35:42] "GET /api/campuses/ HTTP/1.1" 200 52
+[01/Sep/2026 05:35:42] "GET /api/venues/ HTTP/1.1" 200 52
+[01/Sep/2026 05:35:42] "OPTIONS /api/campuses/ HTTP/1.1" 200 0
+[01/Sep/2026 05:36:49] "GET /api/venues/ HTTP/1.1" 200 52
+[01/Sep/2026 05:36:49] "GET /api/campuses/ HTTP/1.1" 200 52
+[01/Sep/2026 05:36:49] "GET /api/venues/ HTTP/1.1" 200 52
+[01/Sep/2026 05:36:49] "GET /api/campuses/ HTTP/1.1" 200 52
+[01/Sep/2026 05:36:50] "OPTIONS /api/auth/register/ HTTP/1.1" 200 0
+[01/Sep/2026 05:36:51] "POST /api/auth/register/ HTTP/1.1" 201 168
+[01/Sep/2026 05:36:51] "OPTIONS /api/auth/token/ HTTP/1.1" 200 0
+/Users/joshuahsin/college-disability-access/.venv/lib/python3.13/site-packages/jwt/api_jwt.py:147: InsecureKeyLengthWarning: The HMAC key is 23 bytes long, which is below the minimum recommended length of 32 bytes for SHA256. See RFC 7518 Section 3.2.
+  return self._jws.encode(
+[01/Sep/2026 05:36:51] "POST /api/auth/token/ HTTP/1.1" 200 582
+[01/Sep/2026 05:36:51] "OPTIONS /api/campuses/ HTTP/1.1" 200 0
+[01/Sep/2026 05:36:51] "OPTIONS /api/venues/ HTTP/1.1" 200 0
+[01/Sep/2026 05:36:51] "OPTIONS /api/campuses/ HTTP/1.1" 200 0
+[01/Sep/2026 05:36:51] "OPTIONS /api/venues/ HTTP/1.1" 200 0
+/Users/joshuahsin/college-disability-access/.venv/lib/python3.13/site-packages/jwt/api_jwt.py:368: InsecureKeyLengthWarning: The HMAC key is 23 bytes long, which is below the minimum recommended length of 32 bytes for SHA256. See RFC 7518 Section 3.2.
+  decoded = self.decode_complete(
+[01/Sep/2026 05:36:52,302] - Broken pipe from ('127.0.0.1', 52250)
+[01/Sep/2026 05:36:52,303] - Broken pipe from ('127.0.0.1', 52243)
+[01/Sep/2026 05:37:16] "OPTIONS /api/auth/register/ HTTP/1.1" 200 0
+[01/Sep/2026 05:37:16] "POST /api/auth/register/ HTTP/1.1" 201 169
+[01/Sep/2026 05:37:16] "OPTIONS /api/auth/token/ HTTP/1.1" 200 0
+[01/Sep/2026 05:37:17] "POST /api/auth/token/ HTTP/1.1" 200 582
+[01/Sep/2026 05:37:17] "OPTIONS /api/campuses/ HTTP/1.1" 200 0
+[01/Sep/2026 05:37:17] "OPTIONS /api/venues/ HTTP/1.1" 200 0
+[01/Sep/2026 05:37:17] "OPTIONS /api/campuses/ HTTP/1.1" 200 0
+[01/Sep/2026 05:37:17] "OPTIONS /api/venues/ HTTP/1.1" 200 0
+[01/Sep/2026 05:37:17,559] - Broken pipe from ('127.0.0.1', 52262)
+[01/Sep/2026 05:37:17,559] - Broken pipe from ('127.0.0.1', 52268)
+Performing system checks...
+
+System check identified no issues (0 silenced).
+September 01, 2026 - 05:34:22
+Django version 5.2.17, using settings 'config.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/

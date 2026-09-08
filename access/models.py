@@ -101,6 +101,20 @@ class Feature(models.Model):
 
 
 class Submission(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        CONFIRMED_ACCESSIBLE = "confirmed_accessible", "Confirmed Accessible"
+        CONFIRMED_INACCESSIBLE = "confirmed_inaccessible", "Confirmed Inaccessible"
+        DISPUTED = "disputed", "Disputed"
+
+    # Below this many total votes, there isn't enough signal to say
+    # anything beyond "pending" -- even a unanimous 2-0 stays pending.
+    MIN_VOTES_FOR_RESOLUTION = 3
+    # A side must hold at least this share of votes to count as resolved.
+    # Anything short of it (including a bare majority) reads as `DISPUTED`
+    # rather than confidently declaring a winner off a razor-thin split.
+    CONFIDENCE_THRESHOLD = 0.65
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     venue = models.ForeignKey(Venue, related_name="submissions", on_delete=models.CASCADE)
     feature = models.ForeignKey(Feature, related_name="submissions", on_delete=models.CASCADE)
@@ -137,21 +151,22 @@ class Submission(models.Model):
         return self.dispute_count / total
 
     @property
-    def is_disputed(self):
-        """True once disputes hold a strict majority of votes cast so far."""
-        return self.dispute_count > self.confirm_count
-
-    @property
-    def effective_claim(self):
+    def status(self):
         """
-        Live, non-destructive majority-vote view of `claim`. Starts equal to
-        the reporter's original claim at 0 votes, flips once disputes take
-        a strict majority, and flips back if confirms regain it. `claim`
-        itself is never mutated -- this is always recomputed from the
-        current vote tally, so it's fully reversible and the original
-        report stays intact for audit purposes.
+        Live, non-destructive vote-tally status. `claim` itself is never
+        mutated -- this is always recomputed from the current vote tally,
+        so it's fully reversible as more votes come in.
         """
-        return (not self.claim) if self.is_disputed else self.claim
+        total = self.total_votes
+        if total < self.MIN_VOTES_FOR_RESOLUTION:
+            return self.Status.PENDING
+        confirm_share = self.confirm_count / total
+        dispute_share = self.dispute_count / total
+        if confirm_share >= self.CONFIDENCE_THRESHOLD:
+            return self.Status.CONFIRMED_ACCESSIBLE if self.claim else self.Status.CONFIRMED_INACCESSIBLE
+        if dispute_share >= self.CONFIDENCE_THRESHOLD:
+            return self.Status.CONFIRMED_INACCESSIBLE if self.claim else self.Status.CONFIRMED_ACCESSIBLE
+        return self.Status.DISPUTED
 
 
 class Confirmation(models.Model):

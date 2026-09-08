@@ -70,8 +70,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
     confirm_count = serializers.IntegerField(read_only=True)
     dispute_count = serializers.IntegerField(read_only=True)
     dispute_rate = serializers.FloatField(read_only=True)
-    is_disputed = serializers.BooleanField(read_only=True)
-    effective_claim = serializers.BooleanField(read_only=True)
+    status = serializers.ChoiceField(choices=Submission.Status.choices, read_only=True)
 
     class Meta:
         model = Submission
@@ -81,11 +80,10 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "feature",
             "reporter",
             "claim",
-            "effective_claim",
+            "status",
             "confirm_count",
             "dispute_count",
             "dispute_rate",
-            "is_disputed",
             "created_at",
             "updated_at",
         ]
