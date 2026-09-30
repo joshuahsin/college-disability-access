@@ -1,9 +1,6 @@
-import datetime
-
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from django.utils import timezone
 
 from access.models import Campus, Comment, Confirmation, Feature, Submission, Venue
 
@@ -138,29 +135,20 @@ class Command(BaseCommand):
 
     # ---- submissions ---------------------------------------------------
 
-    def _get_or_create_submission(self, venue, feature, reporter, claim, days_ago=0):
+    def _get_or_create_submission(self, venue, feature, reporter):
         """
-        Idempotent create: if a submission with this exact
-        (venue, feature, reporter, claim) already exists, reuse it instead
-        of creating a duplicate on re-run.
+        A Submission is a topic, not a claim -- unique per (venue, feature),
+        so get_or_create on that pair is naturally idempotent. `reporter`
+        just records who first flagged it as worth tracking.
         """
-        submission = Submission.objects.filter(
-            venue=venue, feature=feature, reporter=reporter, claim=claim
-        ).first()
-        if submission is not None:
-            return submission
-        submission = Submission.objects.create(
-            venue=venue, feature=feature, reporter=reporter, claim=claim
+        submission, created = Submission.objects.get_or_create(
+            venue=venue, feature=feature, defaults={"reporter": reporter}
         )
-        if days_ago:
-            Submission.objects.filter(pk=submission.pk).update(
-                created_at=timezone.now() - datetime.timedelta(days=days_ago)
+        if created:
+            self.stdout.write(
+                f"  created submission: {venue.name}/{feature.name} "
+                f"(flagged by {reporter.username})"
             )
-            submission.refresh_from_db()
-        self.stdout.write(
-            f"  created submission: {venue.name}/{feature.name} by {reporter.username} "
-            f"(claim={claim})"
-        )
         return submission
 
     def _seed_submissions(self, users, venues, features):
@@ -171,60 +159,80 @@ class Command(BaseCommand):
 
         submissions = {}
 
-        # Multi-submission history: latest submission is the one displayed.
-        self._get_or_create_submission(
-            venues[(uci, "Langson Library")], features["Ramp"], bob, True, days_ago=10
-        )
+        # Langson Library is the single-venue demo: all four Submission
+        # statuses show up across its four features, so opening this one
+        # venue is enough to see the full range at a glance.
         submissions["langson_ramp"] = self._get_or_create_submission(
-            venues[(uci, "Langson Library")], features["Ramp"], alice, True, days_ago=2
+            venues[(uci, "Langson Library")], features["Ramp"], bob
+        )
+        submissions["langson_elevator"] = self._get_or_create_submission(
+            venues[(uci, "Langson Library")], features["Elevator"], alice
+        )
+        submissions["langson_braille"] = self._get_or_create_submission(
+            venues[(uci, "Langson Library")], features["Braille Signage"], carol
+        )
+        submissions["langson_restroom"] = self._get_or_create_submission(
+            venues[(uci, "Langson Library")], features["Accessible Restroom"], dave
         )
 
-        # Boundary dispute (66.7%): resolves CONFIRMED_INACCESSIBLE.
+        # Boundary not-accessible (66.7%): resolves CONFIRMED_INACCESSIBLE.
         submissions["anteatery_restroom"] = self._get_or_create_submission(
-            venues[(uci, "Anteatery")], features["Accessible Restroom"], carol, True
+            venues[(uci, "Anteatery")], features["Accessible Restroom"], carol
         )
 
         # Only 2 votes cast: stays PENDING regardless of split.
         submissions["middleearth_elevator"] = self._get_or_create_submission(
-            venues[(uci, "Middle Earth Housing")], features["Elevator"], dave, False
+            venues[(uci, "Middle Earth Housing")], features["Elevator"], dave
         )
 
         # Zero votes: baseline PENDING case, plus comments.
         submissions["brenhall_braille"] = self._get_or_create_submission(
-            venues[(uci, "Donald Bren Hall")], features["Braille Signage"], alice, True
+            venues[(uci, "Donald Bren Hall")], features["Braille Signage"], alice
         )
 
         # Comment thread, no votes yet.
         submissions["arc_ramp"] = self._get_or_create_submission(
-            venues[(uci, "Anteater Recreation Center")], features["Ramp"], bob, True
+            venues[(uci, "Anteater Recreation Center")], features["Ramp"], bob
         )
 
         # Even split (2-2): resolves DISPUTED, not a coin-flip winner.
         submissions["powell_elevator"] = self._get_or_create_submission(
-            venues[(ucla, "Powell Library")], features["Elevator"], alice, True
+            venues[(ucla, "Powell Library")], features["Elevator"], alice
         )
 
-        # Unanimous dispute on a False claim: resolves CONFIRMED_ACCESSIBLE.
+        # Unanimous not-accessible votes: resolves CONFIRMED_INACCESSIBLE.
         submissions["deneve_restroom"] = self._get_or_create_submission(
-            venues[(ucla, "De Neve Dining")], features["Accessible Restroom"], carol, False
+            venues[(ucla, "De Neve Dining")], features["Accessible Restroom"], carol
         )
 
         # Zero votes, zero comments: plain baseline.
         submissions["sproul_braille"] = self._get_or_create_submission(
-            venues[(ucla, "Sproul Hall")], features["Braille Signage"], dave, True
+            venues[(ucla, "Sproul Hall")], features["Braille Signage"], dave
         )
 
         # Comment thread, no votes yet.
         submissions["wooden_ramp"] = self._get_or_create_submission(
-            venues[(ucla, "John Wooden Center")], features["Ramp"], bob, True
+            venues[(ucla, "John Wooden Center")], features["Ramp"], bob
         )
 
-        # Multi-submission history again: the claim flips between reports.
-        self._get_or_create_submission(
-            venues[(ucla, "Royce Hall")], features["Elevator"], bob, False, days_ago=7
-        )
+        # Boundary accessible (66.7%): resolves CONFIRMED_ACCESSIBLE.
         submissions["royce_elevator"] = self._get_or_create_submission(
-            venues[(ucla, "Royce Hall")], features["Elevator"], alice, True, days_ago=1
+            venues[(ucla, "Royce Hall")], features["Elevator"], alice
+        )
+
+        # Bare majority (60%) short of the 65% bar: resolves DISPUTED.
+        submissions["anteatery_ramp"] = self._get_or_create_submission(
+            venues[(uci, "Anteatery")], features["Ramp"], carol
+        )
+
+        # Rounds out per-feature coverage: without these, Accessible
+        # Restroom never resolves CONFIRMED_ACCESSIBLE anywhere, and Braille
+        # Signage never resolves CONFIRMED_INACCESSIBLE anywhere.
+        submissions["wooden_restroom"] = self._get_or_create_submission(
+            venues[(ucla, "John Wooden Center")], features["Accessible Restroom"], carol
+        )
+        submissions["powell_braille"] = self._get_or_create_submission(
+            venues[(ucla, "Powell Library")], features["Braille Signage"], dave
         )
 
         return submissions
@@ -249,53 +257,92 @@ class Command(BaseCommand):
             decisively (3-0, 3-1)
           - DISPUTED: enough votes exist but neither side clears 65%,
             both as an even split and as a bare-majority miss (3-2 = 60%)
+        The Langson Library submissions specifically are set up so all four
+        statuses appear across its four features in one place.
         """
         self.stdout.write("Seeding confirmations...")
         alice, bob, carol, dave, admin = (
             users["alice"], users["bob"], users["carol"], users["dave"], users["admin"],
         )
 
-        # Unanimous 3-0 confirm -> CONFIRMED_ACCESSIBLE.
-        self._cast_vote(submissions["langson_ramp"], carol, Confirmation.Vote.CONFIRM)
-        self._cast_vote(submissions["langson_ramp"], dave, Confirmation.Vote.CONFIRM)
-        self._cast_vote(submissions["langson_ramp"], admin, Confirmation.Vote.CONFIRM)
+        # Langson Library / Ramp: unanimous 3-0 accessible ->
+        # CONFIRMED_ACCESSIBLE.
+        self._cast_vote(submissions["langson_ramp"], carol, Confirmation.Vote.ACCESSIBLE)
+        self._cast_vote(submissions["langson_ramp"], dave, Confirmation.Vote.ACCESSIBLE)
+        self._cast_vote(submissions["langson_ramp"], admin, Confirmation.Vote.ACCESSIBLE)
 
-        # 2-1 dispute (66.7%) on claim=True -> right at the confidence
-        # boundary -> CONFIRMED_INACCESSIBLE.
-        self._cast_vote(submissions["anteatery_restroom"], alice, Confirmation.Vote.DISPUTE)
-        self._cast_vote(submissions["anteatery_restroom"], bob, Confirmation.Vote.DISPUTE)
-        self._cast_vote(submissions["anteatery_restroom"], dave, Confirmation.Vote.CONFIRM)
+        # Langson Library / Elevator: unanimous 3-0 not-accessible ->
+        # CONFIRMED_INACCESSIBLE.
+        self._cast_vote(submissions["langson_elevator"], bob, Confirmation.Vote.NOT_ACCESSIBLE)
+        self._cast_vote(submissions["langson_elevator"], carol, Confirmation.Vote.NOT_ACCESSIBLE)
+        self._cast_vote(submissions["langson_elevator"], dave, Confirmation.Vote.NOT_ACCESSIBLE)
+
+        # Langson Library / Braille Signage: even 2-2 split -> DISPUTED.
+        self._cast_vote(submissions["langson_braille"], alice, Confirmation.Vote.ACCESSIBLE)
+        self._cast_vote(submissions["langson_braille"], bob, Confirmation.Vote.ACCESSIBLE)
+        self._cast_vote(submissions["langson_braille"], dave, Confirmation.Vote.NOT_ACCESSIBLE)
+        self._cast_vote(submissions["langson_braille"], admin, Confirmation.Vote.NOT_ACCESSIBLE)
+
+        # Langson Library / Accessible Restroom: zero votes -> PENDING.
+        # (intentionally no votes cast)
+
+        # 2-1 not-accessible (66.7%) -> right at the confidence boundary ->
+        # CONFIRMED_INACCESSIBLE.
+        self._cast_vote(submissions["anteatery_restroom"], alice, Confirmation.Vote.NOT_ACCESSIBLE)
+        self._cast_vote(submissions["anteatery_restroom"], bob, Confirmation.Vote.NOT_ACCESSIBLE)
+        self._cast_vote(submissions["anteatery_restroom"], dave, Confirmation.Vote.ACCESSIBLE)
 
         # Only 2 total votes -> below the 3-vote floor -> PENDING, even
         # though it's not unanimous either.
-        self._cast_vote(submissions["middleearth_elevator"], alice, Confirmation.Vote.CONFIRM)
-        self._cast_vote(submissions["middleearth_elevator"], bob, Confirmation.Vote.DISPUTE)
+        self._cast_vote(submissions["middleearth_elevator"], alice, Confirmation.Vote.ACCESSIBLE)
+        self._cast_vote(submissions["middleearth_elevator"], bob, Confirmation.Vote.NOT_ACCESSIBLE)
 
         # 2-2 even split -> neither side clears 65% -> DISPUTED.
-        self._cast_vote(submissions["powell_elevator"], bob, Confirmation.Vote.CONFIRM)
-        self._cast_vote(submissions["powell_elevator"], carol, Confirmation.Vote.CONFIRM)
-        self._cast_vote(submissions["powell_elevator"], dave, Confirmation.Vote.DISPUTE)
-        self._cast_vote(submissions["powell_elevator"], admin, Confirmation.Vote.DISPUTE)
+        self._cast_vote(submissions["powell_elevator"], bob, Confirmation.Vote.ACCESSIBLE)
+        self._cast_vote(submissions["powell_elevator"], carol, Confirmation.Vote.ACCESSIBLE)
+        self._cast_vote(submissions["powell_elevator"], dave, Confirmation.Vote.NOT_ACCESSIBLE)
+        self._cast_vote(submissions["powell_elevator"], admin, Confirmation.Vote.NOT_ACCESSIBLE)
 
-        # Unanimous 3-0 dispute on claim=False -> community says it IS
-        # accessible, contradicting the reporter -> CONFIRMED_ACCESSIBLE.
-        self._cast_vote(submissions["deneve_restroom"], alice, Confirmation.Vote.DISPUTE)
-        self._cast_vote(submissions["deneve_restroom"], bob, Confirmation.Vote.DISPUTE)
-        self._cast_vote(submissions["deneve_restroom"], dave, Confirmation.Vote.DISPUTE)
+        # Unanimous 3-0 not-accessible -> CONFIRMED_INACCESSIBLE.
+        self._cast_vote(submissions["deneve_restroom"], alice, Confirmation.Vote.NOT_ACCESSIBLE)
+        self._cast_vote(submissions["deneve_restroom"], bob, Confirmation.Vote.NOT_ACCESSIBLE)
+        self._cast_vote(submissions["deneve_restroom"], dave, Confirmation.Vote.NOT_ACCESSIBLE)
 
-        # 3-1 dispute (75%) on claim=True -> decisively past the boundary,
+        # 3-1 not-accessible (75%) -> decisively past the boundary,
         # contrasts with anteatery_restroom's narrower 66.7% case ->
         # CONFIRMED_INACCESSIBLE.
-        self._cast_vote(submissions["wooden_ramp"], alice, Confirmation.Vote.DISPUTE)
-        self._cast_vote(submissions["wooden_ramp"], carol, Confirmation.Vote.DISPUTE)
-        self._cast_vote(submissions["wooden_ramp"], dave, Confirmation.Vote.DISPUTE)
-        self._cast_vote(submissions["wooden_ramp"], admin, Confirmation.Vote.CONFIRM)
+        self._cast_vote(submissions["wooden_ramp"], alice, Confirmation.Vote.NOT_ACCESSIBLE)
+        self._cast_vote(submissions["wooden_ramp"], carol, Confirmation.Vote.NOT_ACCESSIBLE)
+        self._cast_vote(submissions["wooden_ramp"], dave, Confirmation.Vote.NOT_ACCESSIBLE)
+        self._cast_vote(submissions["wooden_ramp"], admin, Confirmation.Vote.ACCESSIBLE)
 
-        # 2-1 confirm (66.7%) -> confirm-side mirror of anteatery_restroom's
-        # boundary case -> CONFIRMED_ACCESSIBLE.
-        self._cast_vote(submissions["royce_elevator"], carol, Confirmation.Vote.CONFIRM)
-        self._cast_vote(submissions["royce_elevator"], bob, Confirmation.Vote.CONFIRM)
-        self._cast_vote(submissions["royce_elevator"], dave, Confirmation.Vote.DISPUTE)
+        # 2-1 accessible (66.7%) -> accessible-side mirror of
+        # anteatery_restroom's boundary case -> CONFIRMED_ACCESSIBLE.
+        self._cast_vote(submissions["royce_elevator"], carol, Confirmation.Vote.ACCESSIBLE)
+        self._cast_vote(submissions["royce_elevator"], bob, Confirmation.Vote.ACCESSIBLE)
+        self._cast_vote(submissions["royce_elevator"], dave, Confirmation.Vote.NOT_ACCESSIBLE)
+
+        # 3-2 accessible (60%) -- a real majority, but short of the 65%
+        # confidence bar -> stays DISPUTED rather than confidently
+        # resolving off a razor-thin margin.
+        self._cast_vote(submissions["anteatery_ramp"], alice, Confirmation.Vote.ACCESSIBLE)
+        self._cast_vote(submissions["anteatery_ramp"], bob, Confirmation.Vote.ACCESSIBLE)
+        self._cast_vote(submissions["anteatery_ramp"], carol, Confirmation.Vote.ACCESSIBLE)
+        self._cast_vote(submissions["anteatery_ramp"], dave, Confirmation.Vote.NOT_ACCESSIBLE)
+        self._cast_vote(submissions["anteatery_ramp"], admin, Confirmation.Vote.NOT_ACCESSIBLE)
+
+        # Unanimous 3-0 accessible -> CONFIRMED_ACCESSIBLE (Accessible
+        # Restroom's only resolved-accessible example).
+        self._cast_vote(submissions["wooden_restroom"], alice, Confirmation.Vote.ACCESSIBLE)
+        self._cast_vote(submissions["wooden_restroom"], bob, Confirmation.Vote.ACCESSIBLE)
+        self._cast_vote(submissions["wooden_restroom"], dave, Confirmation.Vote.ACCESSIBLE)
+
+        # 3-1 not-accessible (75%) -> CONFIRMED_INACCESSIBLE (Braille
+        # Signage's only resolved-inaccessible example).
+        self._cast_vote(submissions["powell_braille"], alice, Confirmation.Vote.ACCESSIBLE)
+        self._cast_vote(submissions["powell_braille"], bob, Confirmation.Vote.NOT_ACCESSIBLE)
+        self._cast_vote(submissions["powell_braille"], carol, Confirmation.Vote.NOT_ACCESSIBLE)
+        self._cast_vote(submissions["powell_braille"], admin, Confirmation.Vote.NOT_ACCESSIBLE)
 
     # ---- comments ------------------------------------------------------
 
@@ -335,4 +382,9 @@ class Command(BaseCommand):
         self._add_comment(
             submissions["wooden_ramp"], carol,
             "Thanks for reporting this!",
+        )
+
+        self._add_comment(
+            submissions["langson_restroom"], alice,
+            "Has anyone checked this restroom recently?",
         )
