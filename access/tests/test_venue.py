@@ -1,6 +1,6 @@
 from rest_framework import status
 
-from access.models import Campus, Venue
+from access.models import Campus, Feature, Submission, Venue
 
 from .base import NIL_UUID, BaseAPITestCase
 
@@ -163,3 +163,18 @@ class VenueViewSetTests(BaseAPITestCase):
         response = self.client.delete(venue_detail_url(self.venue.id))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Venue.objects.filter(id=self.venue.id).exists())
+
+    def test_creating_venue_seeds_a_submission_per_existing_feature(self):
+        Feature.objects.create(name="Elevator")
+        feature_count = Feature.objects.count()
+        self.authenticate()
+        response = self.client.post(VENUES_URL, self.valid_payload(), format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        submissions = Submission.objects.filter(venue_id=response.data["id"])
+        self.assertEqual(submissions.count(), feature_count)
+        self.assertTrue(all(s.reporter_id == self.user.id for s in submissions))
+        self.assertEqual(
+            set(submissions.values_list("feature_id", flat=True)),
+            set(Feature.objects.values_list("id", flat=True)),
+        )

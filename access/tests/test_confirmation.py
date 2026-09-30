@@ -1,6 +1,6 @@
 from rest_framework import status
 
-from access.models import Confirmation, Submission
+from access.models import Confirmation, Feature, Submission
 
 from .base import NIL_UUID, BaseAPITestCase
 
@@ -11,13 +11,13 @@ class ConfirmationViewSetTests(BaseAPITestCase):
     def setUp(self):
         super().setUp()
         self.submission = Submission.objects.create(
-            venue=self.venue, feature=self.feature, reporter=self.user, claim=True
+            venue=self.venue, feature=self.feature, reporter=self.admin_user
         )
 
     def test_anonymous_cannot_vote(self):
         response = self.client.post(
             CONFIRMATIONS_URL,
-            {"submission": str(self.submission.id), "vote": "CONFIRM"},
+            {"submission": str(self.submission.id), "vote": "ACCESSIBLE"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
@@ -26,7 +26,7 @@ class ConfirmationViewSetTests(BaseAPITestCase):
         self.authenticate()
         response = self.client.post(
             CONFIRMATIONS_URL,
-            {"submission": str(self.submission.id), "vote": "CONFIRM"},
+            {"submission": str(self.submission.id), "vote": "ACCESSIBLE"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -38,12 +38,12 @@ class ConfirmationViewSetTests(BaseAPITestCase):
         self.authenticate()
         self.client.post(
             CONFIRMATIONS_URL,
-            {"submission": str(self.submission.id), "vote": "CONFIRM"},
+            {"submission": str(self.submission.id), "vote": "ACCESSIBLE"},
             format="json",
         )
         response = self.client.post(
             CONFIRMATIONS_URL,
-            {"submission": str(self.submission.id), "vote": "CONFIRM"},
+            {"submission": str(self.submission.id), "vote": "ACCESSIBLE"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -55,30 +55,30 @@ class ConfirmationViewSetTests(BaseAPITestCase):
         self.authenticate()
         self.client.post(
             CONFIRMATIONS_URL,
-            {"submission": str(self.submission.id), "vote": "CONFIRM"},
+            {"submission": str(self.submission.id), "vote": "ACCESSIBLE"},
             format="json",
         )
         response = self.client.post(
             CONFIRMATIONS_URL,
-            {"submission": str(self.submission.id), "vote": "DISPUTE"},
+            {"submission": str(self.submission.id), "vote": "NOT_ACCESSIBLE"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         confirmations = Confirmation.objects.filter(submission=self.submission, user=self.user)
         self.assertEqual(confirmations.count(), 1)
-        self.assertEqual(confirmations.first().vote, Confirmation.Vote.DISPUTE)
+        self.assertEqual(confirmations.first().vote, Confirmation.Vote.NOT_ACCESSIBLE)
 
     def test_different_users_can_each_vote_independently(self):
         self.authenticate(self.user)
         self.client.post(
             CONFIRMATIONS_URL,
-            {"submission": str(self.submission.id), "vote": "CONFIRM"},
+            {"submission": str(self.submission.id), "vote": "ACCESSIBLE"},
             format="json",
         )
         self.authenticate(self.other_user)
         response = self.client.post(
             CONFIRMATIONS_URL,
-            {"submission": str(self.submission.id), "vote": "DISPUTE"},
+            {"submission": str(self.submission.id), "vote": "NOT_ACCESSIBLE"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -105,7 +105,7 @@ class ConfirmationViewSetTests(BaseAPITestCase):
     def test_vote_on_nonexistent_submission_rejected(self):
         self.authenticate()
         response = self.client.post(
-            CONFIRMATIONS_URL, {"submission": NIL_UUID, "vote": "CONFIRM"}, format="json"
+            CONFIRMATIONS_URL, {"submission": NIL_UUID, "vote": "ACCESSIBLE"}, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("submission", response.data)
@@ -114,16 +114,17 @@ class ConfirmationViewSetTests(BaseAPITestCase):
         self.authenticate(self.user)
         self.client.post(
             CONFIRMATIONS_URL,
-            {"submission": str(self.submission.id), "vote": "CONFIRM"},
+            {"submission": str(self.submission.id), "vote": "ACCESSIBLE"},
             format="json",
         )
+        other_feature = Feature.objects.create(name="Elevator")
         other_submission = Submission.objects.create(
-            venue=self.venue, feature=self.feature, reporter=self.other_user, claim=False
+            venue=self.venue, feature=other_feature, reporter=self.admin_user
         )
         self.authenticate(self.other_user)
         self.client.post(
             CONFIRMATIONS_URL,
-            {"submission": str(other_submission.id), "vote": "DISPUTE"},
+            {"submission": str(other_submission.id), "vote": "NOT_ACCESSIBLE"},
             format="json",
         )
 

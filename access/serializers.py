@@ -35,6 +35,8 @@ class CampusSerializer(serializers.ModelSerializer):
 
 
 class VenueSerializer(serializers.ModelSerializer):
+    status_summary = serializers.SerializerMethodField()
+
     class Meta:
         model = Venue
         fields = [
@@ -45,6 +47,7 @@ class VenueSerializer(serializers.ModelSerializer):
             "latitude",
             "longitude",
             "category",
+            "status_summary",
             "created_at",
             "updated_at",
         ]
@@ -57,6 +60,29 @@ class VenueSerializer(serializers.ModelSerializer):
             )
         ]
 
+    def get_status_summary(self, venue):
+        """
+        How many of this venue's Submission topics currently fall into each
+        live status. Relies on the view's prefetch of submissions (and
+        their confirmations) to stay cheap across a list of venues.
+        """
+        counts = dict.fromkeys(Submission.Status.values, 0)
+        for submission in venue.submissions.all():
+            counts[submission.status] += 1
+        return counts
+
+    def create(self, validated_data):
+        """
+        A new venue isn't useful until it has something to vote/comment on
+        for every existing feature, so seed a Submission topic per existing
+        feature, attributed to the staff user who added the venue.
+        """
+        venue = super().create(validated_data)
+        reporter = self.context["request"].user
+        for feature in Feature.objects.all():
+            Submission.objects.create(venue=venue, feature=feature, reporter=reporter)
+        return venue
+
 
 class FeatureSerializer(serializers.ModelSerializer):
     class Meta:
@@ -64,12 +90,22 @@ class FeatureSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "description", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
+    def create(self, validated_data):
+        """
+        Symmetric to VenueSerializer.create(): a new feature isn't useful
+        until every existing venue has a Submission topic for it.
+        """
+        feature = super().create(validated_data)
+        reporter = self.context["request"].user
+        for venue in Venue.objects.all():
+            Submission.objects.create(venue=venue, feature=feature, reporter=reporter)
+        return feature
+
 
 class SubmissionSerializer(serializers.ModelSerializer):
     reporter = UserSerializer(read_only=True)
-    confirm_count = serializers.IntegerField(read_only=True)
-    dispute_count = serializers.IntegerField(read_only=True)
-    dispute_rate = serializers.FloatField(read_only=True)
+    accessible_count = serializers.IntegerField(read_only=True)
+    inaccessible_count = serializers.IntegerField(read_only=True)
     status = serializers.ChoiceField(choices=Submission.Status.choices, read_only=True)
 
     class Meta:
@@ -79,15 +115,20 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "venue",
             "feature",
             "reporter",
-            "claim",
             "status",
-            "confirm_count",
-            "dispute_count",
-            "dispute_rate",
+            "accessible_count",
+            "inaccessible_count",
             "created_at",
             "updated_at",
         ]
         read_only_fields = ["id", "reporter", "created_at", "updated_at"]
+        validators = [
+            serializers.UniqueTogetherValidator(
+                queryset=Submission.objects.all(),
+                fields=["venue", "feature"],
+                message="A submission for this venue/feature pair already exists.",
+            )
+        ]
 
     def create(self, validated_data):
         validated_data["reporter"] = self.context["request"].user

@@ -101,6 +101,15 @@ class Feature(models.Model):
 
 
 class Submission(models.Model):
+    """
+    One persistent topic per (venue, feature) pair -- not a claim, just the
+    fact that "does this venue have this feature" is being tracked. There is
+    no assertion to agree or disagree with; `status` is a pure, live tally
+    of direct votes (see Confirmation.Vote) for one state or the other.
+    `reporter` only records who first flagged this pair as worth tracking --
+    it carries no extra weight in the outcome versus anyone else's vote.
+    """
+
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
         CONFIRMED_ACCESSIBLE = "confirmed_accessible", "Confirmed Accessible"
@@ -121,58 +130,53 @@ class Submission(models.Model):
     reporter = models.ForeignKey(
         settings.AUTH_USER_MODEL, related_name="submissions", on_delete=models.CASCADE
     )
-    claim = models.BooleanField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["venue", "feature"], name="unique_submission_per_venue_feature"),
+        ]
 
     def __str__(self):
-        return f"{self.venue_id}/{self.feature_id}: {self.claim}"
+        return f"{self.venue_id}/{self.feature_id}"
 
     @property
-    def confirm_count(self):
-        return self.confirmations.filter(vote=Confirmation.Vote.CONFIRM).count()
+    def accessible_count(self):
+        # Counts in Python over `.all()` rather than `.filter().count()` so
+        # that a prefetch_related("confirmations") upstream (e.g. listing
+        # venues with their submissions) is actually reused instead of
+        # triggering a fresh query per submission.
+        return sum(1 for c in self.confirmations.all() if c.vote == Confirmation.Vote.ACCESSIBLE)
 
     @property
-    def dispute_count(self):
-        return self.confirmations.filter(vote=Confirmation.Vote.DISPUTE).count()
+    def inaccessible_count(self):
+        return sum(
+            1 for c in self.confirmations.all() if c.vote == Confirmation.Vote.NOT_ACCESSIBLE
+        )
 
     @property
     def total_votes(self):
-        return self.confirm_count + self.dispute_count
-
-    @property
-    def dispute_rate(self):
-        total = self.total_votes
-        if total == 0:
-            return 0.0
-        return self.dispute_count / total
+        return self.accessible_count + self.inaccessible_count
 
     @property
     def status(self):
-        """
-        Live, non-destructive vote-tally status. `claim` itself is never
-        mutated -- this is always recomputed from the current vote tally,
-        so it's fully reversible as more votes come in.
-        """
+        """Live vote tally -- recomputed on every access, nothing stored."""
         total = self.total_votes
         if total < self.MIN_VOTES_FOR_RESOLUTION:
             return self.Status.PENDING
-        confirm_share = self.confirm_count / total
-        dispute_share = self.dispute_count / total
-        if confirm_share >= self.CONFIDENCE_THRESHOLD:
-            return self.Status.CONFIRMED_ACCESSIBLE if self.claim else self.Status.CONFIRMED_INACCESSIBLE
-        if dispute_share >= self.CONFIDENCE_THRESHOLD:
-            return self.Status.CONFIRMED_INACCESSIBLE if self.claim else self.Status.CONFIRMED_ACCESSIBLE
+        if self.accessible_count / total >= self.CONFIDENCE_THRESHOLD:
+            return self.Status.CONFIRMED_ACCESSIBLE
+        if self.inaccessible_count / total >= self.CONFIDENCE_THRESHOLD:
+            return self.Status.CONFIRMED_INACCESSIBLE
         return self.Status.DISPUTED
 
 
 class Confirmation(models.Model):
     class Vote(models.TextChoices):
-        CONFIRM = "CONFIRM", "Confirm"
-        DISPUTE = "DISPUTE", "Dispute"
+        ACCESSIBLE = "ACCESSIBLE", "Accessible"
+        NOT_ACCESSIBLE = "NOT_ACCESSIBLE", "Not Accessible"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     submission = models.ForeignKey(
@@ -181,7 +185,7 @@ class Confirmation(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, related_name="confirmations", on_delete=models.CASCADE
     )
-    vote = models.CharField(max_length=10, choices=Vote.choices)
+    vote = models.CharField(max_length=14, choices=Vote.choices)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
