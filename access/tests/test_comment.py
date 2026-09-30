@@ -1,6 +1,6 @@
 from rest_framework import status
 
-from access.models import Comment, Submission
+from access.models import Comment, Feature, Submission
 
 from .base import NIL_UUID, BaseAPITestCase
 
@@ -15,7 +15,7 @@ class CommentViewSetTests(BaseAPITestCase):
     def setUp(self):
         super().setUp()
         self.submission = Submission.objects.create(
-            venue=self.venue, feature=self.feature, reporter=self.user, claim=True
+            venue=self.venue, feature=self.feature, reporter=self.admin_user
         )
 
     def test_anonymous_cannot_list(self):
@@ -154,8 +154,9 @@ class CommentViewSetTests(BaseAPITestCase):
         Comment.objects.create(
             submission=self.submission, user=self.user, body="On this submission"
         )
+        other_feature = Feature.objects.create(name="Elevator")
         other_submission = Submission.objects.create(
-            venue=self.venue, feature=self.feature, reporter=self.user, claim=False
+            venue=self.venue, feature=other_feature, reporter=self.admin_user
         )
         Comment.objects.create(
             submission=other_submission, user=self.user, body="On other submission"

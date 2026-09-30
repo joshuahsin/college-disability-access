@@ -12,6 +12,9 @@ class BaseAPITestCase(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="alice", password="alice-pass-1")
         self.other_user = User.objects.create_user(username="bob", password="bob-pass-1")
+        self.admin_user = User.objects.create_user(
+            username="admin-carol", password="admin-carol-pass-1", is_staff=True
+        )
 
         self.campus = Campus.objects.create(name="Main Campus")
         self.venue = Venue.objects.create(
