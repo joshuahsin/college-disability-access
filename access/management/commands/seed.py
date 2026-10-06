@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from access.models import Campus, Comment, Confirmation, Feature, Submission, Venue
+from access.models import Campus, Comment, CommentReaction, Confirmation, Feature, Submission, Venue
 
 User = get_user_model()
 
@@ -21,7 +21,8 @@ class Command(BaseCommand):
             features = self._seed_features()
             submissions = self._seed_submissions(users, venues, features)
             self._seed_confirmations(users, submissions)
-            self._seed_comments(users, submissions)
+            comments = self._seed_comments(users, submissions)
+            self._seed_comment_reactions(users, comments)
 
         self.stdout.write(self.style.SUCCESS("Seed complete."))
         self.stdout.write(
@@ -29,7 +30,8 @@ class Command(BaseCommand):
             f"{Venue.objects.count()} venues, {Feature.objects.count()} features, "
             f"{Submission.objects.count()} submissions, "
             f"{Confirmation.objects.count()} confirmations, "
-            f"{Comment.objects.count()} comments"
+            f"{Comment.objects.count()} comments, "
+            f"{CommentReaction.objects.count()} comment reactions"
         )
 
     # ---- users -----------------------------------------------------
@@ -346,18 +348,22 @@ class Command(BaseCommand):
 
     # ---- comments ------------------------------------------------------
 
-    def _add_comment(self, submission, user, body):
-        _, created = Comment.objects.get_or_create(
-            submission=submission, user=user, body=body
+    def _add_comment(self, submission, user, body, parent=None):
+        comment, created = Comment.objects.get_or_create(
+            submission=submission, user=user, body=body, parent=parent
         )
         if created:
-            self.stdout.write(f"  {user.username} commented on {submission.feature.name}")
+            kind = "replied on" if parent else "commented on"
+            self.stdout.write(f"  {user.username} {kind} {submission.feature.name}")
+        return comment
 
     def _seed_comments(self, users, submissions):
         self.stdout.write("Seeding comments...")
         alice, bob, carol, dave = users["alice"], users["bob"], users["carol"], users["dave"]
 
-        self._add_comment(
+        comments = {}
+
+        comments["brenhall_braille_bob"] = self._add_comment(
             submissions["brenhall_braille"], bob,
             "Can confirm, saw braille signage near room 4011.",
         )
@@ -375,16 +381,42 @@ class Command(BaseCommand):
             "Is there a ramp on the pool side too?",
         )
 
-        self._add_comment(
+        wooden_ramp_top_comment = self._add_comment(
             submissions["wooden_ramp"], alice,
             "Ramp near the west entrance works well.",
         )
+        comments["wooden_ramp_alice"] = wooden_ramp_top_comment
         self._add_comment(
             submissions["wooden_ramp"], carol,
             "Thanks for reporting this!",
+            parent=wooden_ramp_top_comment,
         )
 
         self._add_comment(
             submissions["langson_restroom"], alice,
             "Has anyone checked this restroom recently?",
         )
+
+        return comments
+
+    # ---- comment reactions -----------------------------------------------
+
+    def _react(self, comment, user, vote):
+        _, created = CommentReaction.objects.get_or_create(
+            comment=comment, user=user, defaults={"vote": vote}
+        )
+        if created:
+            self.stdout.write(f"  {user.username} {vote.lower()}d a comment")
+
+    def _seed_comment_reactions(self, users, comments):
+        self.stdout.write("Seeding comment reactions...")
+        alice, bob, carol, dave = users["alice"], users["bob"], users["carol"], users["dave"]
+
+        # Mixed reaction: 2 likes, 1 dislike.
+        self._react(comments["wooden_ramp_alice"], bob, CommentReaction.Vote.LIKE)
+        self._react(comments["wooden_ramp_alice"], carol, CommentReaction.Vote.LIKE)
+        self._react(comments["wooden_ramp_alice"], dave, CommentReaction.Vote.DISLIKE)
+
+        # Unanimous likes.
+        self._react(comments["brenhall_braille_bob"], alice, CommentReaction.Vote.LIKE)
+        self._react(comments["brenhall_braille_bob"], dave, CommentReaction.Vote.LIKE)

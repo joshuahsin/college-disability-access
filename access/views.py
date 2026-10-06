@@ -1,11 +1,14 @@
 from django.db.models import Prefetch
+from django.shortcuts import get_object_or_404
 from rest_framework import generics, mixins, permissions, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from .models import Campus, Comment, Confirmation, Feature, Submission, Venue
+from .models import Campus, Comment, CommentReaction, Confirmation, Feature, Submission, Venue
 from .permissions import IsAuthenticatedOrReadOnly, IsAuthorOrReadOnly, IsStaffOrReadOnly
 from .serializers import (
     CampusSerializer,
+    CommentReactionSerializer,
     CommentSerializer,
     ConfirmationSerializer,
     FeatureSerializer,
@@ -96,7 +99,7 @@ class SubmissionViewSet(
 
 class ConfirmationViewSet(viewsets.ModelViewSet):
     serializer_class = ConfirmationSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsAuthorOrReadOnly]
 
     def get_queryset(self):
         queryset = Confirmation.objects.select_related("submission", "user").all()
@@ -121,8 +124,66 @@ class CommentViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsAuthorOrReadOnly]
 
     def get_queryset(self):
-        queryset = Comment.objects.select_related("submission", "user").all()
+        queryset = Comment.objects.select_related(
+            "submission", "user", "parent"
+        ).prefetch_related("reactions")
         submission_id = self.request.query_params.get("submission")
         if submission_id:
             queryset = queryset.filter(submission_id=submission_id)
+        parent_id = self.request.query_params.get("parent")
+        if parent_id:
+            queryset = queryset.filter(parent_id=parent_id)
         return queryset
+
+    @action(detail=True, methods=["patch"], url_path="reaction")
+    def reaction(self, request, pk=None):
+        """
+        PATCH /api/comments/<comment_id>/reaction/ -- upsert "my reaction"
+        to this comment, identified by (comment, request.user) rather than
+        the CommentReaction's own id, so the client never needs to look one
+        up first. Body is just {"vote": "LIKE"|"DISLIKE"} -- no comment or
+        user field, same trust boundary as everywhere else in this API.
+
+        Deliberately fetches via get_queryset() instead of get_object():
+        get_object() would run this view's own IsAuthorOrReadOnly check,
+        which guards editing the *comment* and would wrongly require the
+        requester to be the comment's author -- reacting to someone else's
+        comment is the whole point.
+        """
+        comment = get_object_or_404(self.get_queryset(), pk=pk)
+        serializer = CommentReactionSerializer(
+            data={**request.data, "comment": str(comment.id)},
+            context=self.get_serializer_context(),
+        )
+        serializer.is_valid(raise_exception=True)
+        already_reacted = CommentReaction.objects.filter(
+            comment=comment, user=request.user
+        ).exists()
+        instance = serializer.save()
+        response_status = status.HTTP_200_OK if already_reacted else status.HTTP_201_CREATED
+        return Response(
+            CommentReactionSerializer(instance, context=self.get_serializer_context()).data,
+            status=response_status,
+        )
+
+
+class CommentReactionViewSet(viewsets.ModelViewSet):
+    serializer_class = CommentReactionSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAuthorOrReadOnly]
+
+    def get_queryset(self):
+        queryset = CommentReaction.objects.select_related("comment", "user").all()
+        comment_id = self.request.query_params.get("comment")
+        if comment_id:
+            queryset = queryset.filter(comment_id=comment_id)
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        already_reacted = CommentReaction.objects.filter(
+            comment=serializer.validated_data["comment"], user=request.user
+        ).exists()
+        instance = serializer.save()
+        response_status = status.HTTP_200_OK if already_reacted else status.HTTP_201_CREATED
+        return Response(self.get_serializer(instance).data, status=response_status)

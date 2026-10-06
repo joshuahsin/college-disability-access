@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from .models import Campus, Comment, Confirmation, Feature, Submission, Venue
+from .models import Campus, Comment, CommentReaction, Confirmation, Feature, Submission, Venue
 
 User = get_user_model()
 
@@ -165,10 +165,22 @@ class ConfirmationSerializer(serializers.ModelSerializer):
 
 class CommentSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
+    like_count = serializers.IntegerField(read_only=True)
+    dislike_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Comment
-        fields = ["id", "submission", "user", "body", "created_at", "updated_at"]
+        fields = [
+            "id",
+            "submission",
+            "user",
+            "parent",
+            "body",
+            "like_count",
+            "dislike_count",
+            "created_at",
+            "updated_at",
+        ]
         read_only_fields = ["id", "user", "created_at", "updated_at"]
 
     def validate_body(self, value):
@@ -177,6 +189,46 @@ class CommentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Comment body cannot be empty.")
         return stripped
 
+    def validate(self, attrs):
+        parent = attrs.get("parent")
+        if parent is not None:
+            if parent.parent_id is not None:
+                raise serializers.ValidationError(
+                    {"parent": "Cannot reply to a reply -- replies are limited to one level deep."}
+                )
+            submission = attrs.get("submission", getattr(self.instance, "submission", None))
+            if submission is not None and parent.submission_id != submission.id:
+                raise serializers.ValidationError(
+                    {"parent": "Parent comment must belong to the same submission."}
+                )
+        return attrs
+
     def create(self, validated_data):
         validated_data["user"] = self.context["request"].user
         return super().create(validated_data)
+
+
+class CommentReactionSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+
+    class Meta:
+        model = CommentReaction
+        fields = ["id", "comment", "user", "vote", "created_at", "updated_at"]
+        read_only_fields = ["id", "user", "created_at", "updated_at"]
+
+    def create(self, validated_data):
+        """
+        Same idempotent-vote upsert as ConfirmationSerializer: re-casting
+        the same reaction is a no-op, switching (like <-> dislike) updates
+        the existing row in place, and a first-time reaction creates one.
+        """
+        request = self.context["request"]
+        comment = validated_data["comment"]
+        vote = validated_data["vote"]
+        existing = CommentReaction.objects.filter(comment=comment, user=request.user).first()
+        if existing is not None:
+            if existing.vote != vote:
+                existing.vote = vote
+                existing.save(update_fields=["vote", "updated_at"])
+            return existing
+        return CommentReaction.objects.create(comment=comment, user=request.user, vote=vote)

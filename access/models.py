@@ -205,6 +205,12 @@ class Comment(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, related_name="comments", on_delete=models.CASCADE
     )
+    # Null for a top-level comment; set for a reply. Replies are capped at
+    # one level deep (enforced in CommentSerializer, not here) -- a reply's
+    # own `parent` field is always null.
+    parent = models.ForeignKey(
+        "self", null=True, blank=True, related_name="replies", on_delete=models.CASCADE
+    )
     body = models.TextField(max_length=2000)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -214,3 +220,46 @@ class Comment(models.Model):
 
     def __str__(self):
         return f"{self.user_id} on {self.submission_id}: {self.body[:30]}"
+
+    @property
+    def like_count(self):
+        # Iterate over `.all()` rather than `.filter().count()` so a
+        # prefetch_related("reactions") upstream is reused, same reasoning
+        # as Submission.accessible_count above.
+        return sum(1 for r in self.reactions.all() if r.vote == CommentReaction.Vote.LIKE)
+
+    @property
+    def dislike_count(self):
+        return sum(1 for r in self.reactions.all() if r.vote == CommentReaction.Vote.DISLIKE)
+
+
+class CommentReaction(models.Model):
+    """
+    A like/dislike on a Comment -- purely a transparent, displayed count.
+    Never auto-hides or re-sorts a comment; same non-destructive philosophy
+    as Submission.status. One vote per user per comment (see Confirmation,
+    which this mirrors exactly, including the idempotent-vote upsert
+    behavior in CommentReactionSerializer.create()).
+    """
+
+    class Vote(models.TextChoices):
+        LIKE = "LIKE", "Like"
+        DISLIKE = "DISLIKE", "Dislike"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    comment = models.ForeignKey(Comment, related_name="reactions", on_delete=models.CASCADE)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, related_name="comment_reactions", on_delete=models.CASCADE
+    )
+    vote = models.CharField(max_length=7, choices=Vote.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["comment", "user"], name="unique_reaction_per_user"),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id} -> {self.comment_id}: {self.vote}"

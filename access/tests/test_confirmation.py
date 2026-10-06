@@ -7,6 +7,10 @@ from .base import NIL_UUID, BaseAPITestCase
 CONFIRMATIONS_URL = "/api/confirmations/"
 
 
+def confirmation_detail_url(confirmation_id):
+    return f"{CONFIRMATIONS_URL}{confirmation_id}/"
+
+
 class ConfirmationViewSetTests(BaseAPITestCase):
     def setUp(self):
         super().setUp()
@@ -132,3 +136,40 @@ class ConfirmationViewSetTests(BaseAPITestCase):
         results = self.results(response)
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["submission"], self.submission.id)
+
+    def test_non_owner_cannot_patch_someone_elses_vote(self):
+        confirmation = Confirmation.objects.create(
+            submission=self.submission, user=self.user, vote=Confirmation.Vote.ACCESSIBLE
+        )
+        self.authenticate(self.other_user)
+        response = self.client.patch(
+            confirmation_detail_url(confirmation.id),
+            {"vote": "NOT_ACCESSIBLE"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        confirmation.refresh_from_db()
+        self.assertEqual(confirmation.vote, Confirmation.Vote.ACCESSIBLE)
+
+    def test_non_owner_cannot_delete_someone_elses_vote(self):
+        confirmation = Confirmation.objects.create(
+            submission=self.submission, user=self.user, vote=Confirmation.Vote.ACCESSIBLE
+        )
+        self.authenticate(self.other_user)
+        response = self.client.delete(confirmation_detail_url(confirmation.id))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(Confirmation.objects.filter(id=confirmation.id).exists())
+
+    def test_owner_can_patch_own_vote(self):
+        confirmation = Confirmation.objects.create(
+            submission=self.submission, user=self.user, vote=Confirmation.Vote.ACCESSIBLE
+        )
+        self.authenticate(self.user)
+        response = self.client.patch(
+            confirmation_detail_url(confirmation.id),
+            {"vote": "NOT_ACCESSIBLE"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        confirmation.refresh_from_db()
+        self.assertEqual(confirmation.vote, Confirmation.Vote.NOT_ACCESSIBLE)

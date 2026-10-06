@@ -72,16 +72,28 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.environ.get("POSTGRES_DB", "college_access"),
-        "USER": os.environ.get("POSTGRES_USER", "college_access"),
-        "PASSWORD": os.environ.get("POSTGRES_PASSWORD", ""),
-        "HOST": os.environ.get("POSTGRES_HOST", "localhost"),
-        "PORT": os.environ.get("POSTGRES_PORT", "5432"),
+# Defaults to Postgres (how this app is actually deployed); set
+# DJANGO_DATABASE_ENGINE=sqlite3 in .env for local dev with no external
+# database at all. This app uses no Postgres-specific features, so the two
+# engines are interchangeable for every environment except production.
+if os.environ.get("DJANGO_DATABASE_ENGINE", "postgresql") == "sqlite3":
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.environ.get("POSTGRES_DB", "college_access"),
+            "USER": os.environ.get("POSTGRES_USER", "college_access"),
+            "PASSWORD": os.environ.get("POSTGRES_PASSWORD", ""),
+            "HOST": os.environ.get("POSTGRES_HOST", "localhost"),
+            "PORT": os.environ.get("POSTGRES_PORT", "5432"),
+        }
+    }
 
 AUTH_USER_MODEL = "access.User"
 

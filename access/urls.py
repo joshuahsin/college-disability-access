@@ -4,6 +4,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .views import (
     CampusViewSet,
+    CommentReactionViewSet,
     CommentViewSet,
     ConfirmationViewSet,
     FeatureViewSet,
@@ -19,6 +20,7 @@ router.register("features", FeatureViewSet, basename="feature")
 router.register("submissions", SubmissionViewSet, basename="submission")
 router.register("confirmations", ConfirmationViewSet, basename="confirmation")
 router.register("comments", CommentViewSet, basename="comment")
+router.register("comment-reactions", CommentReactionViewSet, basename="comment-reaction")
 
 urlpatterns = [
     path("auth/register/", RegisterView.as_view(), name="auth-register"),
