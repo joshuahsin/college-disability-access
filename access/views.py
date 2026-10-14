@@ -5,7 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from .models import Campus, Comment, CommentReaction, Confirmation, Feature, Submission, Venue
-from .permissions import IsAuthenticatedOrReadOnly, IsAuthorOrReadOnly, IsStaffOrReadOnly
+from .permissions import IsAuthorOrReadOnly, IsStaffOrReadOnly
 from .serializers import (
     CampusSerializer,
     CommentReactionSerializer,
@@ -24,14 +24,18 @@ class RegisterView(generics.CreateAPIView):
 
 
 class CampusViewSet(viewsets.ModelViewSet):
+    """Only staff can create/update/delete campuses -- anyone can read."""
+
     queryset = Campus.objects.all()
     serializer_class = CampusSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
+    permission_classes = [IsStaffOrReadOnly]
 
 
 class VenueViewSet(viewsets.ModelViewSet):
+    """Only staff can create/update/delete venues -- anyone can read."""
+
     serializer_class = VenueSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
+    permission_classes = [IsStaffOrReadOnly]
 
     def get_queryset(self):
         """

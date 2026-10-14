@@ -109,13 +109,13 @@ class TokenObtainAndRefreshTests(APITestCase):
             TOKEN_URL, {"username": "alice", "password": "alice-pass-1"}, format="json"
         )
         access = obtain.data["access"]
-        response = self.client.post(
-            CAMPUSES_URL,
-            {"name": "New Campus"},
-            format="json",
-            HTTP_AUTHORIZATION=f"Bearer {access}",
+        # Submissions require only IsAuthenticated to read (no staff
+        # needed), so this isolates "does the token authenticate at all"
+        # from any authorization/staff concern.
+        response = self.client.get(
+            "/api/submissions/", HTTP_AUTHORIZATION=f"Bearer {access}"
         )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 
 class ProtectedEndpointAuthTests(APITestCase):

@@ -31,26 +31,32 @@ class CampusViewSetTests(BaseAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertFalse(Campus.objects.filter(name="New Campus").exists())
 
-    def test_authenticated_can_create(self):
-        self.authenticate()
+    def test_non_staff_cannot_create(self):
+        self.authenticate(self.user)
+        response = self.client.post(CAMPUSES_URL, {"name": "New Campus"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(Campus.objects.filter(name="New Campus").exists())
+
+    def test_staff_can_create(self):
+        self.authenticate(self.admin_user)
         response = self.client.post(CAMPUSES_URL, {"name": "New Campus"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertTrue(Campus.objects.filter(name="New Campus").exists())
 
     def test_create_missing_name_rejected(self):
-        self.authenticate()
+        self.authenticate(self.admin_user)
         response = self.client.post(CAMPUSES_URL, {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("name", response.data)
 
     def test_create_duplicate_name_rejected(self):
-        self.authenticate()
+        self.authenticate(self.admin_user)
         response = self.client.post(CAMPUSES_URL, {"name": self.campus.name}, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("name", response.data)
 
-    def test_authenticated_can_update(self):
-        self.authenticate()
+    def test_staff_can_update(self):
+        self.authenticate(self.admin_user)
         response = self.client.patch(
             campus_detail_url(self.campus.id), {"name": "Renamed Campus"}, format="json"
         )
@@ -58,17 +64,30 @@ class CampusViewSetTests(BaseAPITestCase):
         self.campus.refresh_from_db()
         self.assertEqual(self.campus.name, "Renamed Campus")
 
+    def test_non_staff_cannot_update(self):
+        self.authenticate(self.user)
+        response = self.client.patch(
+            campus_detail_url(self.campus.id), {"name": "Renamed Campus"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_anonymous_cannot_update(self):
         response = self.client.patch(
             campus_detail_url(self.campus.id), {"name": "Renamed Campus"}, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_authenticated_can_delete(self):
-        self.authenticate()
+    def test_staff_can_delete(self):
+        self.authenticate(self.admin_user)
         response = self.client.delete(campus_detail_url(self.campus.id))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Campus.objects.filter(id=self.campus.id).exists())
+
+    def test_non_staff_cannot_delete(self):
+        self.authenticate(self.user)
+        response = self.client.delete(campus_detail_url(self.campus.id))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(Campus.objects.filter(id=self.campus.id).exists())
 
     def test_anonymous_cannot_delete(self):
         response = self.client.delete(campus_detail_url(self.campus.id))

@@ -41,20 +41,25 @@ class VenueViewSetTests(BaseAPITestCase):
         response = self.client.post(VENUES_URL, self.valid_payload(), format="json")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_authenticated_can_create(self):
-        self.authenticate()
+    def test_non_staff_cannot_create(self):
+        self.authenticate(self.user)
+        response = self.client.post(VENUES_URL, self.valid_payload(), format="json")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_staff_can_create(self):
+        self.authenticate(self.admin_user)
         response = self.client.post(VENUES_URL, self.valid_payload(), format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def test_create_duplicate_name_same_campus_rejected(self):
-        self.authenticate()
+        self.authenticate(self.admin_user)
         response = self.client.post(
             VENUES_URL, self.valid_payload(name=self.venue.name), format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_create_same_name_different_campus_allowed(self):
-        self.authenticate()
+        self.authenticate(self.admin_user)
         other_campus = Campus.objects.create(name="Other Campus")
         response = self.client.post(
             VENUES_URL,
@@ -64,7 +69,7 @@ class VenueViewSetTests(BaseAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def test_create_missing_campus_rejected(self):
-        self.authenticate()
+        self.authenticate(self.admin_user)
         payload = self.valid_payload()
         del payload["campus"]
         response = self.client.post(VENUES_URL, payload, format="json")
@@ -72,7 +77,7 @@ class VenueViewSetTests(BaseAPITestCase):
         self.assertIn("campus", response.data)
 
     def test_create_nonexistent_campus_rejected(self):
-        self.authenticate()
+        self.authenticate(self.admin_user)
         response = self.client.post(
             VENUES_URL, self.valid_payload(campus=NIL_UUID), format="json"
         )
@@ -80,30 +85,30 @@ class VenueViewSetTests(BaseAPITestCase):
         self.assertIn("campus", response.data)
 
     def test_latitude_above_max_rejected(self):
-        self.authenticate()
+        self.authenticate(self.admin_user)
         response = self.client.post(VENUES_URL, self.valid_payload(latitude=91.0), format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("latitude", response.data)
 
     def test_latitude_below_min_rejected(self):
-        self.authenticate()
+        self.authenticate(self.admin_user)
         response = self.client.post(VENUES_URL, self.valid_payload(latitude=-91.0), format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("latitude", response.data)
 
     def test_latitude_at_boundary_accepted(self):
-        self.authenticate()
+        self.authenticate(self.admin_user)
         response = self.client.post(VENUES_URL, self.valid_payload(latitude=90.0), format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def test_longitude_above_max_rejected(self):
-        self.authenticate()
+        self.authenticate(self.admin_user)
         response = self.client.post(VENUES_URL, self.valid_payload(longitude=181.0), format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("longitude", response.data)
 
     def test_longitude_below_min_rejected(self):
-        self.authenticate()
+        self.authenticate(self.admin_user)
         response = self.client.post(
             VENUES_URL, self.valid_payload(longitude=-181.0), format="json"
         )
@@ -111,13 +116,13 @@ class VenueViewSetTests(BaseAPITestCase):
         self.assertIn("longitude", response.data)
 
     def test_invalid_category_rejected(self):
-        self.authenticate()
+        self.authenticate(self.admin_user)
         response = self.client.post(VENUES_URL, self.valid_payload(category="spa"), format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("category", response.data)
 
     def test_address_optional(self):
-        self.authenticate()
+        self.authenticate(self.admin_user)
         payload = self.valid_payload()
         del payload["address"]
         response = self.client.post(VENUES_URL, payload, format="json")
@@ -151,29 +156,42 @@ class VenueViewSetTests(BaseAPITestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["id"], str(self.venue.id))
 
-    def test_authenticated_can_update(self):
-        self.authenticate()
+    def test_staff_can_update(self):
+        self.authenticate(self.admin_user)
         response = self.client.patch(
             venue_detail_url(self.venue.id), {"name": "Renamed Venue"}, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_authenticated_can_delete(self):
-        self.authenticate()
+    def test_non_staff_cannot_update(self):
+        self.authenticate(self.user)
+        response = self.client.patch(
+            venue_detail_url(self.venue.id), {"name": "Renamed Venue"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_staff_can_delete(self):
+        self.authenticate(self.admin_user)
         response = self.client.delete(venue_detail_url(self.venue.id))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Venue.objects.filter(id=self.venue.id).exists())
 
+    def test_non_staff_cannot_delete(self):
+        self.authenticate(self.user)
+        response = self.client.delete(venue_detail_url(self.venue.id))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(Venue.objects.filter(id=self.venue.id).exists())
+
     def test_creating_venue_seeds_a_submission_per_existing_feature(self):
         Feature.objects.create(name="Elevator")
         feature_count = Feature.objects.count()
-        self.authenticate()
+        self.authenticate(self.admin_user)
         response = self.client.post(VENUES_URL, self.valid_payload(), format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         submissions = Submission.objects.filter(venue_id=response.data["id"])
         self.assertEqual(submissions.count(), feature_count)
-        self.assertTrue(all(s.reporter_id == self.user.id for s in submissions))
+        self.assertTrue(all(s.reporter_id == self.admin_user.id for s in submissions))
         self.assertEqual(
             set(submissions.values_list("feature_id", flat=True)),
             set(Feature.objects.values_list("id", flat=True)),
