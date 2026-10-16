@@ -12,9 +12,9 @@ from .serializers import (
     CommentSerializer,
     ConfirmationSerializer,
     FeatureSerializer,
-    MeSerializer,
     SubmissionSerializer,
     UserRegisterSerializer,
+    UserSerializer,
     VenueSerializer,
 )
 
@@ -27,7 +27,7 @@ class RegisterView(generics.CreateAPIView):
 class MeView(generics.RetrieveAPIView):
     """GET /api/auth/me/ -- the logged-in user's own profile, including is_staff."""
 
-    serializer_class = MeSerializer
+    serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):

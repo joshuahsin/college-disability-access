@@ -43,6 +43,24 @@ class CommentViewSetTests(BaseAPITestCase):
         self.assertEqual(response.data["like_count"], 0)
         self.assertEqual(response.data["dislike_count"], 0)
 
+    def test_nested_author_reports_is_staff_for_admin_badge(self):
+        self.authenticate(self.admin_user)
+        response = self.client.post(
+            COMMENTS_URL,
+            {"submission": str(self.submission.id), "body": "Fixed as of today."},
+            format="json",
+        )
+        self.assertTrue(response.data["user"]["is_staff"])
+
+    def test_nested_author_reports_is_staff_false_for_regular_user(self):
+        self.authenticate(self.user)
+        response = self.client.post(
+            COMMENTS_URL,
+            {"submission": str(self.submission.id), "body": "Looks fine to me."},
+            format="json",
+        )
+        self.assertFalse(response.data["user"]["is_staff"])
+
     def test_author_cannot_be_spoofed(self):
         self.authenticate(self.user)
         response = self.client.post(

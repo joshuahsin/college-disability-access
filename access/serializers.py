@@ -21,19 +21,10 @@ class UserRegisterSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ["id", "username", "created_at", "updated_at"]
-        read_only_fields = fields
-
-
-class MeSerializer(serializers.ModelSerializer):
     """
-    Like UserSerializer, plus `is_staff` -- used only for GET /auth/me/ so a
-    client can tell whether it's looking at its own admin account. Kept
-    separate from UserSerializer (used everywhere a comment/vote/submission
-    nests its author) so other users' staff status isn't exposed alongside
-    theirs.
+    Used both for GET /auth/me/ and nested wherever a comment/vote/
+    submission shows its author -- `is_staff` is intentionally public here
+    so the frontend can render an admin badge on staff-authored comments.
     """
 
     class Meta:
