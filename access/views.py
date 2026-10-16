@@ -12,6 +12,7 @@ from .serializers import (
     CommentSerializer,
     ConfirmationSerializer,
     FeatureSerializer,
+    MeSerializer,
     SubmissionSerializer,
     UserRegisterSerializer,
     VenueSerializer,
@@ -21,6 +22,16 @@ from .serializers import (
 class RegisterView(generics.CreateAPIView):
     serializer_class = UserRegisterSerializer
     permission_classes = [permissions.AllowAny]
+
+
+class MeView(generics.RetrieveAPIView):
+    """GET /api/auth/me/ -- the logged-in user's own profile, including is_staff."""
+
+    serializer_class = MeSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user
 
 
 class CampusViewSet(viewsets.ModelViewSet):

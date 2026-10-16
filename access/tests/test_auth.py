@@ -5,6 +5,7 @@ from rest_framework.test import APITestCase
 User = get_user_model()
 
 REGISTER_URL = "/api/auth/register/"
+ME_URL = "/api/auth/me/"
 TOKEN_URL = "/api/auth/token/"
 REFRESH_URL = "/api/auth/token/refresh/"
 CAMPUSES_URL = "/api/campuses/"
@@ -116,6 +117,43 @@ class TokenObtainAndRefreshTests(APITestCase):
             "/api/submissions/", HTTP_AUTHORIZATION=f"Bearer {access}"
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+
+class MeViewTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="alice", password="alice-pass-1")
+        self.admin_user = User.objects.create_user(
+            username="admin-carol", password="admin-carol-pass-1", is_staff=True
+        )
+
+    def _token_for(self, username, password):
+        response = self.client.post(
+            TOKEN_URL, {"username": username, "password": password}, format="json"
+        )
+        return response.data["access"]
+
+    def test_anonymous_cannot_fetch_me(self):
+        response = self.client.get(ME_URL)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_regular_user_sees_own_profile_not_staff(self):
+        access = self._token_for("alice", "alice-pass-1")
+        response = self.client.get(ME_URL, HTTP_AUTHORIZATION=f"Bearer {access}")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["username"], "alice")
+        self.assertFalse(response.data["is_staff"])
+
+    def test_staff_user_sees_own_profile_is_staff(self):
+        access = self._token_for("admin-carol", "admin-carol-pass-1")
+        response = self.client.get(ME_URL, HTTP_AUTHORIZATION=f"Bearer {access}")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["username"], "admin-carol")
+        self.assertTrue(response.data["is_staff"])
+
+    def test_me_does_not_expose_password(self):
+        access = self._token_for("alice", "alice-pass-1")
+        response = self.client.get(ME_URL, HTTP_AUTHORIZATION=f"Bearer {access}")
+        self.assertNotIn("password", response.data)
 
 
 class ProtectedEndpointAuthTests(APITestCase):

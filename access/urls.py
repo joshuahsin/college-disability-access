@@ -8,6 +8,7 @@ from .views import (
     CommentViewSet,
     ConfirmationViewSet,
     FeatureViewSet,
+    MeView,
     RegisterView,
     SubmissionViewSet,
     VenueViewSet,
@@ -24,6 +25,7 @@ router.register("comment-reactions", CommentReactionViewSet, basename="comment-r
 
 urlpatterns = [
     path("auth/register/", RegisterView.as_view(), name="auth-register"),
+    path("auth/me/", MeView.as_view(), name="auth-me"),
     path("auth/token/", TokenObtainPairView.as_view(), name="token-obtain-pair"),
     path("auth/token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
     path("", include(router.urls)),
